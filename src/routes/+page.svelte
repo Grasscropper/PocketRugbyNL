@@ -1,0 +1,353 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import { filterMatches, searchMatches, groupByDate, formatDate } from '$lib/matchFilter';
+	import { allTeams, groupByClub } from '$lib/teamUtils';
+	import MatchCard from '$lib/components/MatchCard.svelte';
+	import VirtualList from '$lib/components/VirtualList.svelte';
+	import type { Match } from '$lib/types';
+
+	type FlatItem = { type: 'date'; date: string } | { type: 'match'; match: Match };
+
+	const LS_KEY = 'pocketrugby_selected_teams';
+	const LS_COMPACT = 'pocketrugby_compact';
+
+	let allMatches = $state<Match[]>([]);
+	let selectedTeams = $state<string[]>([]);
+	let loading = $state(true);
+	let error = $state('');
+	let filterOpen = $state(false);
+	let stickyEl = $state<HTMLElement | null>(null);
+	let searchInput = $state('');
+	let searchEl = $state<HTMLInputElement | null>(null);
+	let matchSearch = $state('');
+	let compact = $state(false);
+
+	$effect(() => {
+		const val = searchInput;
+		const t = setTimeout(() => { matchSearch = val; }, 250);
+		return () => clearTimeout(t);
+	});
+
+	const teams = $derived(allTeams(allMatches));
+	const clubGroups = $derived(groupByClub(teams));
+	const filtered = $derived(filterMatches(allMatches, selectedTeams));
+	const searched = $derived(searchMatches(filtered, matchSearch));
+	const grouped = $derived(groupByDate(searched));
+
+	const flatItems = $derived.by(() => {
+		const flat: FlatItem[] = [];
+		for (const [date, matches] of grouped) {
+			flat.push({ type: 'date', date });
+			for (const match of matches) flat.push({ type: 'match', match });
+		}
+		return flat;
+	});
+
+	// Heights must be a derived so VirtualList reacts when compact toggles
+	const getHeight = $derived(
+		(item: FlatItem): number => item.type === 'date' ? 48 : (compact ? 48 : 84)
+	);
+
+	function toggleTeam(team: string) {
+		if (selectedTeams.includes(team)) {
+			selectedTeams = selectedTeams.filter((t) => t !== team);
+		} else {
+			selectedTeams = [...selectedTeams, team];
+		}
+		localStorage.setItem(LS_KEY, JSON.stringify(selectedTeams));
+	}
+
+	function selectClub(clubTeams: string[]) {
+		const allSelected = clubTeams.every((t) => selectedTeams.includes(t));
+		if (allSelected) {
+			selectedTeams = selectedTeams.filter((t) => !clubTeams.includes(t));
+		} else {
+			const toAdd = clubTeams.filter((t) => !selectedTeams.includes(t));
+			selectedTeams = [...selectedTeams, ...toAdd];
+		}
+		localStorage.setItem(LS_KEY, JSON.stringify(selectedTeams));
+	}
+
+	function clearFilter() {
+		selectedTeams = [];
+		localStorage.setItem(LS_KEY, JSON.stringify([]));
+	}
+
+	function toggleCompact() {
+		compact = !compact;
+		localStorage.setItem(LS_COMPACT, String(compact));
+	}
+
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			filterOpen = false;
+		} else if (e.key === '/' && !(['INPUT', 'TEXTAREA'].includes((e.target as Element).tagName))) {
+			e.preventDefault();
+			searchEl?.focus();
+		}
+	}
+
+	function onPointerdown(e: PointerEvent) {
+		if (filterOpen && stickyEl && !stickyEl.contains(e.target as Node)) {
+			filterOpen = false;
+		}
+	}
+
+	onMount(async () => {
+		const saved = localStorage.getItem(LS_KEY);
+		if (saved) {
+			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
+		}
+		compact = localStorage.getItem(LS_COMPACT) === 'true';
+		try {
+			const res = await fetch('/api/matches');
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			allMatches = await res.json();
+		} catch (e) {
+			error = e instanceof Error ? e.message : String(e);
+		} finally {
+			loading = false;
+		}
+	});
+
+</script>
+
+<svelte:window onkeydown={onKeydown} onpointerdown={onPointerdown} />
+
+<div class="sticky-top" bind:this={stickyEl}>
+	<header>
+		<h1>🏉 PocketRugbyNL</h1>
+		<div class="header-actions">
+			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
+				{compact ? '▤' : '☰'}
+			</button>
+			<button class="filter-btn" onclick={() => (filterOpen = !filterOpen)}>
+				Teams {selectedTeams.length > 0 ? `(${selectedTeams.length})` : ''} {filterOpen ? '▲' : '▼'}
+			</button>
+		</div>
+	</header>
+
+	{#if filterOpen}
+		<aside class="filter-panel">
+			<div class="filter-actions">
+				<span class="filter-count">{selectedTeams.length} geselecteerd</span>
+				{#if selectedTeams.length > 0}
+					<button class="clear-btn" onclick={clearFilter}>Alles wissen</button>
+				{/if}
+			</div>
+
+			{#each [...clubGroups] as [club, clubTeams]}
+				<div class="club-group">
+					<button
+						class="club-name"
+						class:partial={clubTeams.some((t) => selectedTeams.includes(t))}
+						class:all={clubTeams.every((t) => selectedTeams.includes(t))}
+						onclick={() => selectClub(clubTeams)}
+					>
+						{club}
+					</button>
+					{#if clubTeams.length > 1}
+						<div class="team-list">
+							{#each clubTeams as team}
+								<label class="team-label">
+									<input
+										type="checkbox"
+										checked={selectedTeams.includes(team)}
+										onchange={() => toggleTeam(team)}
+									/>
+									{team}
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</aside>
+	{/if}
+
+	<div class="search-bar">
+		<input
+			class="search-input"
+			type="search"
+			placeholder="Zoek wedstrijd, team, locatie…  (/)"
+			bind:value={searchInput}
+			bind:this={searchEl}
+		/>
+	</div>
+</div>
+
+<main>
+	{#if loading}
+		<div class="loading">Wedstrijden laden… (kan 5-15 seconden duren)</div>
+	{:else if error}
+		<div class="error">Fout: {error}</div>
+	{:else if allMatches.length === 0}
+		<div class="empty">Geen wedstrijden gevonden.</div>
+	{:else if searched.length === 0}
+		<div class="empty">Geen wedstrijden gevonden voor deze zoekopdracht.</div>
+	{:else}
+		<VirtualList items={flatItems} {getHeight}>
+			{#snippet children(item)}
+				{#if item.type === 'date'}
+					<h2 class="date-heading">{formatDate(item.date)}</h2>
+				{:else}
+					<MatchCard match={item.match} {compact} showCompetition query={matchSearch} />
+				{/if}
+			{/snippet}
+		</VirtualList>
+	{/if}
+</main>
+
+<style>
+	.sticky-top {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+	}
+
+	header {
+		background: var(--surface-header);
+		border-bottom: 2px solid var(--accent);
+		color: var(--text);
+		padding: 0.75rem 1rem;
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	h1 { font-size: 1.25rem; font-weight: 700; }
+
+	.header-actions { display: flex; gap: 0.5rem; align-items: center; }
+
+	.icon-btn {
+		background: rgba(240, 96, 0, 0.15);
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		padding: 0.5rem 0.6rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 1rem;
+		min-width: 44px;
+		min-height: 44px;
+		line-height: 1;
+	}
+
+	.icon-btn:hover { background: rgba(240, 96, 0, 0.25); }
+
+	.filter-btn {
+		background: rgba(240, 96, 0, 0.15);
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.9rem;
+		min-width: 44px;
+		min-height: 44px;
+		font-weight: 600;
+	}
+
+	.filter-btn:hover { background: rgba(240, 96, 0, 0.25); }
+
+	.filter-panel {
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+		padding: 1rem;
+		max-height: 60vh;
+		overflow-y: auto;
+	}
+
+	.filter-actions {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
+	}
+
+	.filter-count { font-size: 0.85rem; color: var(--text-muted); }
+
+	.clear-btn {
+		background: none;
+		border: 1px solid #f87171;
+		color: #f87171;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.8rem;
+	}
+
+	.club-group { margin-bottom: 0.5rem; }
+
+	.club-name {
+		background: var(--surface-raised);
+		border: 1px solid var(--border);
+		color: var(--text);
+		border-radius: 4px;
+		padding: 0.4rem 0.75rem;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+		width: 100%;
+		text-align: left;
+		min-height: 44px;
+	}
+
+	.club-name.partial { border-color: var(--accent); color: var(--accent); }
+	.club-name.all { background: var(--accent); color: white; border-color: var(--accent); }
+
+	.team-list { padding: 0.25rem 0 0.25rem 0.75rem; }
+
+	.team-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.3rem 0;
+		font-size: 0.9rem;
+		color: var(--text);
+		cursor: pointer;
+		min-height: 36px;
+	}
+
+	.team-label input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+
+	.search-bar {
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+		padding: 0.5rem 1rem;
+	}
+
+	.search-input {
+		width: 100%;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		font-size: 0.9rem;
+		background: var(--surface-raised);
+		color: var(--text);
+	}
+
+	.search-input::placeholder { color: var(--text-muted); }
+	.search-input:focus { outline: none; border-color: var(--accent); }
+
+	main { padding: 1rem; max-width: 500px; margin: 0 auto; }
+
+	.loading, .error, .empty {
+		text-align: center;
+		padding: 2rem 1rem;
+		color: var(--text-muted);
+		font-size: 1rem;
+	}
+
+	.error { color: #f87171; }
+
+	.date-heading {
+		font-size: 0.95rem;
+		font-weight: 700;
+		color: var(--accent);
+		text-transform: capitalize;
+		padding: 0.75rem 0 0.4rem;
+		border-bottom: 1px solid var(--border);
+		margin-bottom: 0.5rem;
+	}
+
+</style>
