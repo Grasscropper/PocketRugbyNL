@@ -4,8 +4,8 @@
   "description": "Snel wedstrijden vinden in de NL rugby competitie",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f4f4f4",
-  "theme_color": "#003399",
+  "background_color": "#0d1420",
+  "theme_color": "#f06000",
   "icons": [
     {
       "src": "/icon-192.png",
@@ -16,6 +16,12 @@
       "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable any"
     }
   ]
 }
