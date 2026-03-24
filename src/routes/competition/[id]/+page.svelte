@@ -1,9 +1,14 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { groupByDate, formatDate } from '$lib/matchFilter';
+	import { groupByDate, formatDate, searchMatches, filterByTimeWindow } from '$lib/matchFilter';
+	import { allTeams, groupByClub } from '$lib/teamUtils';
+	import { filterMatches } from '$lib/matchFilter';
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import type { Match, RankingEntry } from '$lib/types';
+
+	const LS_COMPACT = 'pocketrugby_compact';
+	const LS_RECENT = 'pocketrugby_recent';
 
 	const id = $derived($page.params.id);
 
@@ -13,9 +18,66 @@
 	let loading = $state(true);
 	let error = $state('');
 
-	const grouped = $derived(groupByDate(matches));
+	let searchInput = $state('');
+	let matchSearch = $state('');
+	let compact = $state(false);
+	let recentOnly = $state(false);
+	let filterOpen = $state(false);
+	let selectedTeams = $state<string[]>([]);
+	let stickyEl = $state<HTMLElement | null>(null);
+
+	$effect(() => {
+		const val = searchInput;
+		const t = setTimeout(() => { matchSearch = val; }, 250);
+		return () => clearTimeout(t);
+	});
+
+	const teams = $derived(allTeams(matches));
+	const clubGroups = $derived(groupByClub(teams));
+	const timeFiltered = $derived(recentOnly ? filterByTimeWindow(matches) : matches);
+	const teamFiltered = $derived(filterMatches(timeFiltered, selectedTeams));
+	const searched = $derived(searchMatches(teamFiltered, matchSearch));
+	const grouped = $derived(groupByDate(searched));
+
+	function toggleTeam(team: string) {
+		if (selectedTeams.includes(team)) {
+			selectedTeams = selectedTeams.filter((t) => t !== team);
+		} else {
+			selectedTeams = [...selectedTeams, team];
+		}
+	}
+
+	function selectClub(clubTeams: string[]) {
+		const allSelected = clubTeams.every((t) => selectedTeams.includes(t));
+		if (allSelected) {
+			selectedTeams = selectedTeams.filter((t) => !clubTeams.includes(t));
+		} else {
+			const toAdd = clubTeams.filter((t) => !selectedTeams.includes(t));
+			selectedTeams = [...selectedTeams, ...toAdd];
+		}
+	}
+
+	function clearFilter() { selectedTeams = []; }
+
+	function toggleCompact() {
+		compact = !compact;
+		localStorage.setItem(LS_COMPACT, String(compact));
+	}
+
+	function toggleRecent() {
+		recentOnly = !recentOnly;
+		localStorage.setItem(LS_RECENT, String(recentOnly));
+	}
+
+	function onPointerdown(e: PointerEvent) {
+		if (filterOpen && stickyEl && !stickyEl.contains(e.target as Node)) {
+			filterOpen = false;
+		}
+	}
 
 	onMount(async () => {
+		compact = localStorage.getItem(LS_COMPACT) === 'true';
+		recentOnly = localStorage.getItem(LS_RECENT) === 'true';
 		try {
 			const res = await fetch(`/api/competition/${id}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -32,10 +94,75 @@
 
 </script>
 
-<header>
-	<a class="back-btn" href="/">← Terug</a>
-	<h1 class="comp-title">{name || 'Competitie'}</h1>
-</header>
+<svelte:window onpointerdown={onPointerdown} />
+
+<div class="sticky-top" bind:this={stickyEl}>
+	<header>
+		<div class="header-left">
+			<a class="back-btn" href="/">← Terug</a>
+			<h1 class="comp-title">{name || 'Competitie'}</h1>
+		</div>
+		<div class="header-actions desktop-only">
+			<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel (afgelopen, deze en volgende week)">Nu</button>
+			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
+				{compact ? '▤' : '☰'}
+			</button>
+			<button
+				class="filter-btn"
+				class:active={selectedTeams.length > 0}
+				onclick={() => (filterOpen = !filterOpen)}
+			>
+				Teams {selectedTeams.length > 0 ? `(${selectedTeams.length})` : ''} {filterOpen ? '▲' : '▼'}
+			</button>
+		</div>
+	</header>
+
+	{#if filterOpen}
+		<aside class="filter-panel">
+			<div class="filter-actions">
+				<span class="filter-count">{selectedTeams.length} geselecteerd</span>
+				{#if selectedTeams.length > 0}
+					<button class="clear-btn" onclick={clearFilter}>Alles wissen</button>
+				{/if}
+			</div>
+			{#each [...clubGroups] as [club, clubTeams]}
+				<div class="club-group">
+					<button
+						class="club-name"
+						class:partial={clubTeams.some((t) => selectedTeams.includes(t))}
+						class:all={clubTeams.every((t) => selectedTeams.includes(t))}
+						onclick={() => selectClub(clubTeams)}
+					>
+						{club}
+					</button>
+					{#if clubTeams.length > 1}
+						<div class="team-list">
+							{#each clubTeams as team}
+								<label class="team-label">
+									<input
+										type="checkbox"
+										checked={selectedTeams.includes(team)}
+										onchange={() => toggleTeam(team)}
+									/>
+									{team}
+								</label>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/each}
+		</aside>
+	{/if}
+
+	<div class="search-bar desktop-only">
+		<input
+			class="search-input"
+			type="search"
+			placeholder="Zoek team, locatie…"
+			bind:value={searchInput}
+		/>
+	</div>
+</div>
 
 <main>
 	{#if loading}
@@ -83,14 +210,14 @@
 
 		<section class="section">
 			<h2 class="section-heading">Speelschema</h2>
-			{#if matches.length === 0}
+			{#if searched.length === 0}
 				<div class="empty">Geen wedstrijden gevonden.</div>
 			{:else}
 				{#each [...grouped] as [date, dayMatches]}
 					<div class="date-section">
 						<h3 class="date-heading">{formatDate(date)}</h3>
 						{#each dayMatches as match}
-							<MatchCard {match} />
+							<MatchCard {match} {compact} query={matchSearch} />
 						{/each}
 					</div>
 				{/each}
@@ -99,17 +226,50 @@
 	{/if}
 </main>
 
+<!-- Mobile/tablet bottom control bar -->
+<div class="bottom-bar mobile-only">
+	<input
+		class="search-input"
+		type="search"
+		placeholder="Zoek team, locatie…"
+		bind:value={searchInput}
+	/>
+	<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel">Nu</button>
+	<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
+		{compact ? '▤' : '☰'}
+	</button>
+	<button
+		class="icon-btn"
+		class:active={selectedTeams.length > 0}
+		onclick={() => (filterOpen = !filterOpen)}
+		title="Teams filteren"
+	>
+		⊟{selectedTeams.length > 0 ? `\u202F${selectedTeams.length}` : ''}
+	</button>
+</div>
+
 <style>
+	.sticky-top {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+	}
+
 	header {
 		background: var(--surface-header);
 		border-bottom: 2px solid var(--accent);
 		padding: 0.75rem 1rem;
 		display: flex;
 		align-items: center;
+		justify-content: space-between;
 		gap: 1rem;
-		position: sticky;
-		top: 0;
-		z-index: 10;
+	}
+
+	.header-left {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+		min-width: 0;
 	}
 
 	.back-btn {
@@ -131,6 +291,120 @@
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
+
+	.header-actions { display: flex; gap: 0.5rem; align-items: center; flex-shrink: 0; }
+
+	.icon-btn {
+		background: rgba(240, 96, 0, 0.15);
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		padding: 0.5rem 0.6rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 1rem;
+		min-width: 44px;
+		min-height: 44px;
+		line-height: 1;
+		font-weight: 600;
+	}
+
+	.icon-btn:hover { background: rgba(240, 96, 0, 0.25); }
+	.icon-btn.active { background: var(--accent); color: white; }
+
+	.filter-btn {
+		background: rgba(240, 96, 0, 0.15);
+		border: 1px solid var(--accent);
+		color: var(--accent);
+		padding: 0.5rem 0.75rem;
+		border-radius: 6px;
+		cursor: pointer;
+		font-size: 0.9rem;
+		min-width: 44px;
+		min-height: 44px;
+		font-weight: 600;
+	}
+
+	.filter-btn:hover, .filter-btn.active { background: rgba(240, 96, 0, 0.25); }
+
+	.filter-panel {
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+		padding: 1rem;
+		max-height: 60vh;
+		overflow-y: auto;
+	}
+
+	.filter-actions {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 0.75rem;
+	}
+
+	.filter-count { font-size: 0.85rem; color: var(--text-muted); }
+
+	.clear-btn {
+		background: none;
+		border: 1px solid #f87171;
+		color: #f87171;
+		padding: 0.25rem 0.5rem;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 0.8rem;
+	}
+
+	.club-group { margin-bottom: 0.5rem; }
+
+	.club-name {
+		background: var(--surface-raised);
+		border: 1px solid var(--border);
+		color: var(--text);
+		border-radius: 4px;
+		padding: 0.4rem 0.75rem;
+		cursor: pointer;
+		font-weight: 600;
+		font-size: 0.9rem;
+		width: 100%;
+		text-align: left;
+		min-height: 44px;
+	}
+
+	.club-name.partial { border-color: var(--accent); color: var(--accent); }
+	.club-name.all { background: var(--accent); color: white; border-color: var(--accent); }
+
+	.team-list { padding: 0.25rem 0 0.25rem 0.75rem; }
+
+	.team-label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.3rem 0;
+		font-size: 0.9rem;
+		color: var(--text);
+		cursor: pointer;
+		min-height: 36px;
+	}
+
+	.team-label input { width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent); }
+
+	.search-bar {
+		background: var(--surface);
+		border-bottom: 1px solid var(--border);
+		padding: 0.5rem 1rem;
+	}
+
+	.search-input {
+		width: 100%;
+		padding: 0.4rem 0.6rem;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		font-size: 0.9rem;
+		background: var(--surface-raised);
+		color: var(--text);
+	}
+
+	.search-input::placeholder { color: var(--text-muted); }
+	.search-input:focus { outline: none; border-color: var(--accent); }
 
 	main { padding: 1rem; max-width: 720px; margin: 0 auto; }
 
@@ -188,7 +462,6 @@
 		margin-bottom: 0.5rem;
 	}
 
-
 	.loading, .error, .empty {
 		text-align: center;
 		padding: 2rem 1rem;
@@ -196,4 +469,45 @@
 	}
 
 	.error { color: #f87171; }
+
+	/* Mobile bottom bar */
+	.bottom-bar {
+		display: none;
+	}
+
+	@media (max-width: 768px) {
+		.desktop-only { display: none !important; }
+
+		.bottom-bar {
+			display: flex;
+			position: fixed;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			z-index: 10;
+			background: var(--surface-header);
+			border-top: 1px solid var(--border);
+			padding: 0.5rem 0.75rem;
+			gap: 0.5rem;
+			align-items: center;
+		}
+
+		.bottom-bar .search-input {
+			flex: 1;
+			min-width: 0;
+			height: 44px;
+			padding: 0 0.6rem;
+			font-size: 0.9rem;
+		}
+
+		.bottom-bar .icon-btn {
+			flex-shrink: 0;
+			padding: 0 0.5rem;
+			font-size: 0.85rem;
+		}
+
+		main {
+			padding-bottom: calc(56px + 1rem);
+		}
+	}
 </style>

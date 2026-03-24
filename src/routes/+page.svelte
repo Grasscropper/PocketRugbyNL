@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { filterMatches, searchMatches, groupByDate, formatDate } from '$lib/matchFilter';
+	import { filterMatches, searchMatches, groupByDate, formatDate, filterByTimeWindow } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import VirtualList from '$lib/components/VirtualList.svelte';
@@ -10,6 +10,7 @@
 
 	const LS_KEY = 'pocketrugby_selected_teams';
 	const LS_COMPACT = 'pocketrugby_compact';
+	const LS_RECENT = 'pocketrugby_recent';
 
 	let allMatches = $state<Match[]>([]);
 	let selectedTeams = $state<string[]>([]);
@@ -21,6 +22,7 @@
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let matchSearch = $state('');
 	let compact = $state(false);
+	let recentOnly = $state(false);
 
 	$effect(() => {
 		const val = searchInput;
@@ -30,7 +32,8 @@
 
 	const teams = $derived(allTeams(allMatches));
 	const clubGroups = $derived(groupByClub(teams));
-	const filtered = $derived(filterMatches(allMatches, selectedTeams));
+	const timeFiltered = $derived(recentOnly ? filterByTimeWindow(allMatches) : allMatches);
+	const filtered = $derived(filterMatches(timeFiltered, selectedTeams));
 	const searched = $derived(searchMatches(filtered, matchSearch));
 	const grouped = $derived(groupByDate(searched));
 
@@ -43,9 +46,9 @@
 		return flat;
 	});
 
-	// Heights must be a derived so VirtualList reacts when compact toggles
+	// Slot heights must accommodate text wrapping on small screens
 	const getHeight = $derived(
-		(item: FlatItem): number => item.type === 'date' ? 48 : (compact ? 48 : 84)
+		(item: FlatItem): number => item.type === 'date' ? 52 : (compact ? 58 : 100)
 	);
 
 	function toggleTeam(team: string) {
@@ -78,6 +81,11 @@
 		localStorage.setItem(LS_COMPACT, String(compact));
 	}
 
+	function toggleRecent() {
+		recentOnly = !recentOnly;
+		localStorage.setItem(LS_RECENT, String(recentOnly));
+	}
+
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'Escape') {
 			filterOpen = false;
@@ -99,6 +107,7 @@
 			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
 		}
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
+		recentOnly = localStorage.getItem(LS_RECENT) === 'true';
 		try {
 			const res = await fetch('/api/matches');
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -117,7 +126,8 @@
 <div class="sticky-top" bind:this={stickyEl}>
 	<header>
 		<h1>🏉 PocketRugbyNL</h1>
-		<div class="header-actions">
+		<div class="header-actions desktop-only">
+			<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel (afgelopen, deze en volgende week)">Nu</button>
 			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
 				{compact ? '▤' : '☰'}
 			</button>
@@ -165,7 +175,7 @@
 		</aside>
 	{/if}
 
-	<div class="search-bar">
+	<div class="search-bar desktop-only">
 		<input
 			class="search-input"
 			type="search"
@@ -197,6 +207,28 @@
 		</VirtualList>
 	{/if}
 </main>
+
+<!-- Mobile/tablet bottom control bar -->
+<div class="bottom-bar mobile-only">
+	<input
+		class="search-input"
+		type="search"
+		placeholder="Zoek wedstrijd, team, locatie…"
+		bind:value={searchInput}
+	/>
+	<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel">Nu</button>
+	<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
+		{compact ? '▤' : '☰'}
+	</button>
+	<button
+		class="icon-btn"
+		class:active={selectedTeams.length > 0}
+		onclick={() => (filterOpen = !filterOpen)}
+		title="Teams filteren"
+	>
+		⊟{selectedTeams.length > 0 ? `\u202F${selectedTeams.length}` : ''}
+	</button>
+</div>
 
 <style>
 	.sticky-top {
@@ -230,9 +262,11 @@
 		min-width: 44px;
 		min-height: 44px;
 		line-height: 1;
+		font-weight: 600;
 	}
 
 	.icon-btn:hover { background: rgba(240, 96, 0, 0.25); }
+	.icon-btn.active { background: var(--accent); color: white; }
 
 	.filter-btn {
 		background: rgba(240, 96, 0, 0.15);
@@ -329,7 +363,11 @@
 	.search-input::placeholder { color: var(--text-muted); }
 	.search-input:focus { outline: none; border-color: var(--accent); }
 
-	main { padding: 1rem; max-width: 500px; margin: 0 auto; }
+	main {
+		padding: 1rem;
+		max-width: 500px;
+		margin: 0 auto;
+	}
 
 	.loading, .error, .empty {
 		text-align: center;
@@ -350,4 +388,44 @@
 		margin-bottom: 0.5rem;
 	}
 
+	/* Mobile bottom bar */
+	.bottom-bar {
+		display: none;
+	}
+
+	@media (max-width: 768px) {
+		.desktop-only { display: none !important; }
+
+		.bottom-bar {
+			display: flex;
+			position: fixed;
+			bottom: 0;
+			left: 0;
+			right: 0;
+			z-index: 10;
+			background: var(--surface-header);
+			border-top: 1px solid var(--border);
+			padding: 0.5rem 0.75rem;
+			gap: 0.5rem;
+			align-items: center;
+		}
+
+		.bottom-bar .search-input {
+			flex: 1;
+			min-width: 0;
+			height: 44px;
+			padding: 0 0.6rem;
+			font-size: 0.9rem;
+		}
+
+		.bottom-bar .icon-btn {
+			flex-shrink: 0;
+			padding: 0 0.5rem;
+			font-size: 0.85rem;
+		}
+
+		main {
+			padding-bottom: calc(56px + 1rem);
+		}
+	}
 </style>
