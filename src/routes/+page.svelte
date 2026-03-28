@@ -27,6 +27,7 @@
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let matchSearch = $state('');
 	let compact = $state(false);
+	let pollCountdown = $state(10);
 
 	$effect(() => {
 		const val = searchInput;
@@ -121,7 +122,12 @@
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
 
 		// Poll for new scrape data every 10s and reload when cachedAt changes
+		const tick = setInterval(() => {
+			pollCountdown = Math.max(0, pollCountdown - 1);
+		}, 1_000);
+
 		const interval = setInterval(async () => {
+			pollCountdown = 10;
 			try {
 				const res = await fetch('/api/cache-status');
 				if (!res.ok) return;
@@ -132,7 +138,7 @@
 			} catch { /* ignore network errors */ }
 		}, 10_000);
 
-		return () => clearInterval(interval);
+		return () => { clearInterval(tick); clearInterval(interval); };
 	});
 
 </script>
@@ -204,7 +210,7 @@
 
 <main>
 	{#if data.data === null}
-		<div class="loading">Data wordt geladen, probeer het zo opnieuw.</div>
+		<div class="loading">Data wordt geladen… controleert over {pollCountdown}s opnieuw.</div>
 	{:else if error}
 		<div class="error">Fout: {error}</div>
 	{:else if allMatches.length === 0}
