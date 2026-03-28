@@ -1,14 +1,13 @@
 <script lang="ts">
 	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
-	import { groupByDate, formatDate, searchMatches, filterByTimeWindow } from '$lib/matchFilter';
+	import { groupByDate, formatDate, searchMatches } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import { filterMatches } from '$lib/matchFilter';
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import type { Match, RankingEntry } from '$lib/types';
 
 	const LS_COMPACT = 'pocketrugby_compact';
-	const LS_RECENT = 'pocketrugby_recent';
 
 	const id = $derived($page.params.id);
 
@@ -21,10 +20,10 @@
 	let searchInput = $state('');
 	let matchSearch = $state('');
 	let compact = $state(false);
-	let recentOnly = $state(false);
 	let filterOpen = $state(false);
 	let selectedTeams = $state<string[]>([]);
 	let stickyEl = $state<HTMLElement | null>(null);
+	let bottomBarEl = $state<HTMLElement | null>(null);
 
 	$effect(() => {
 		const val = searchInput;
@@ -34,8 +33,7 @@
 
 	const teams = $derived(allTeams(matches));
 	const clubGroups = $derived(groupByClub(teams));
-	const timeFiltered = $derived(recentOnly ? filterByTimeWindow(matches) : matches);
-	const teamFiltered = $derived(filterMatches(timeFiltered, selectedTeams));
+	const teamFiltered = $derived(filterMatches(matches, selectedTeams));
 	const searched = $derived(searchMatches(teamFiltered, matchSearch));
 	const grouped = $derived(groupByDate(searched));
 
@@ -64,20 +62,29 @@
 		localStorage.setItem(LS_COMPACT, String(compact));
 	}
 
-	function toggleRecent() {
-		recentOnly = !recentOnly;
-		localStorage.setItem(LS_RECENT, String(recentOnly));
+	function scrollToNow() {
+		const today = new Date().toISOString().slice(0, 10);
+		const sections = document.querySelectorAll<HTMLElement>('[data-date]');
+		let target: HTMLElement | null = null;
+		for (const section of sections) {
+			target = section;
+			if (section.dataset.date! >= today) break;
+		}
+		if (!target) return;
+		const headerH = stickyEl?.offsetHeight ?? 0;
+		const top = target.getBoundingClientRect().top + window.scrollY - headerH;
+		window.scrollTo({ top, behavior: 'smooth' });
 	}
 
 	function onPointerdown(e: PointerEvent) {
 		if (filterOpen && stickyEl && !stickyEl.contains(e.target as Node)) {
+			if (bottomBarEl?.contains(e.target as Node)) return;
 			filterOpen = false;
 		}
 	}
 
 	onMount(async () => {
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
-		recentOnly = localStorage.getItem(LS_RECENT) === 'true';
 		try {
 			const res = await fetch(`/api/competition/${id}`);
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -103,7 +110,7 @@
 			<h1 class="comp-title">{name || 'Competitie'}</h1>
 		</div>
 		<div class="header-actions desktop-only">
-			<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel (afgelopen, deze en volgende week)">Nu</button>
+			<button class="icon-btn" onclick={scrollToNow} title="Spring naar vandaag">Nu</button>
 			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
 				{compact ? '▤' : '☰'}
 			</button>
@@ -214,7 +221,7 @@
 				<div class="empty">Geen wedstrijden gevonden.</div>
 			{:else}
 				{#each [...grouped] as [date, dayMatches]}
-					<div class="date-section">
+					<div class="date-section" data-date={date}>
 						<h3 class="date-heading">{formatDate(date)}</h3>
 						{#each dayMatches as match}
 							<MatchCard {match} {compact} query={matchSearch} />
@@ -227,14 +234,14 @@
 </main>
 
 <!-- Mobile/tablet bottom control bar -->
-<div class="bottom-bar mobile-only">
+<div class="bottom-bar mobile-only" bind:this={bottomBarEl}>
 	<input
 		class="search-input"
 		type="search"
 		placeholder="Zoek team, locatie…"
 		bind:value={searchInput}
 	/>
-	<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel">Nu</button>
+	<button class="icon-btn" onclick={scrollToNow} title="Spring naar vandaag">Nu</button>
 	<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
 		{compact ? '▤' : '☰'}
 	</button>
@@ -477,6 +484,16 @@
 
 	@media (max-width: 768px) {
 		.desktop-only { display: none !important; }
+
+		.filter-panel {
+			position: fixed;
+			bottom: 60px;
+			left: 0;
+			right: 0;
+			border-top: 2px solid var(--accent);
+			border-bottom: none;
+			z-index: 9;
+		}
 
 		.bottom-bar {
 			display: flex;
