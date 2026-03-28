@@ -5,15 +5,18 @@
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import VirtualList from '$lib/components/VirtualList.svelte';
 	import type { Match } from '$lib/types';
+	import type { PageData } from './$types';
 
 	type FlatItem = { type: 'date'; date: string } | { type: 'match'; match: Match };
 
 	const LS_KEY = 'pocketrugby_selected_teams';
 	const LS_COMPACT = 'pocketrugby_compact';
 
-	let allMatches = $state<Match[]>([]);
+	let { data }: { data: PageData } = $props();
+
+	let allMatches = $state<Match[]>((data.data as Match[]) ?? []);
 	let selectedTeams = $state<string[]>([]);
-	let loading = $state(true);
+	let loading = $state(false);
 	let error = $state('');
 	let filterOpen = $state(false);
 	let stickyEl = $state<HTMLElement | null>(null);
@@ -109,21 +112,12 @@
 		}
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		const saved = localStorage.getItem(LS_KEY);
 		if (saved) {
 			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
 		}
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
-		try {
-			const res = await fetch('/api/matches');
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			allMatches = await res.json();
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
 	});
 
 </script>
@@ -194,8 +188,8 @@
 </div>
 
 <main>
-	{#if loading}
-		<div class="loading">Wedstrijden laden… (kan 5-15 seconden duren)</div>
+	{#if data.data === null}
+		<div class="loading">Data wordt geladen, probeer het zo opnieuw.</div>
 	{:else if error}
 		<div class="error">Fout: {error}</div>
 	{:else if allMatches.length === 0}
