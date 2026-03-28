@@ -25,18 +25,37 @@ export function writeCache(data: unknown): void {
 
 const LOG_FILE = join(process.cwd(), 'cache', 'scrape.log');
 
-export type ScrapeLogEntry = {
-	ts: string;
-	trigger: 'cron' | 'cold-start' | 'on-visit';
-	status: 'ok' | 'error';
-	durationMs: number;
-	error?: string;
-};
+export type ScrapeTrigger = 'cron' | 'cold-start' | 'on-visit';
 
-export function appendScrapeLog(entry: ScrapeLogEntry): void {
+function formatDuration(ms: number): string {
+	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+}
+
+function writeLine(trigger: ScrapeTrigger, event: string, detail?: string): void {
+	const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+	const t = trigger.padEnd(11);
+	const line = detail
+		? `${ts}  ${t}  ${event.padEnd(6)}  ${detail}\n`
+		: `${ts}  ${t}  ${event}\n`;
 	const dir = join(process.cwd(), 'cache');
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-	appendFileSync(LOG_FILE, JSON.stringify(entry) + '\n', 'utf-8');
+	appendFileSync(LOG_FILE, line, 'utf-8');
+}
+
+export function logScrapeStart(trigger: ScrapeTrigger): void {
+	writeLine(trigger, 'start');
+}
+
+export function logScrapeEnd(
+	trigger: ScrapeTrigger,
+	durationMs: number,
+	result: { matches: number } | { error: string }
+): void {
+	if ('error' in result) {
+		writeLine(trigger, 'error', `${result.error}  ${formatDuration(durationMs)}`);
+	} else {
+		writeLine(trigger, 'ok', `${result.matches} matches  ${formatDuration(durationMs)}`);
+	}
 }
 
 export let isScraping = false;

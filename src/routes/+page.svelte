@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { invalidateAll } from '$app/navigation';
 	import { filterMatches, searchMatches, groupByDate, formatDate } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import MatchCard from '$lib/components/MatchCard.svelte';
@@ -14,7 +15,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let allMatches = $state<Match[]>((data.data as Match[]) ?? []);
+	const allMatches = $derived<Match[]>((data.data as Match[]) ?? []);
 	let selectedTeams = $state<string[]>([]);
 	let loading = $state(false);
 	let error = $state('');
@@ -118,6 +119,20 @@
 			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
 		}
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
+
+		// Poll for new scrape data every 10s and reload when cachedAt changes
+		const interval = setInterval(async () => {
+			try {
+				const res = await fetch('/api/cache-status');
+				if (!res.ok) return;
+				const { cachedAt } = await res.json() as { cachedAt: number | null };
+				if (cachedAt !== null && cachedAt !== data.cachedAt) {
+					await invalidateAll();
+				}
+			} catch { /* ignore network errors */ }
+		}, 10_000);
+
+		return () => clearInterval(interval);
 	});
 
 </script>
