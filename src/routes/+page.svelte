@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { filterMatches, searchMatches, groupByDate, formatDate, filterByTimeWindow } from '$lib/matchFilter';
+	import { filterMatches, searchMatches, groupByDate, formatDate } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import VirtualList from '$lib/components/VirtualList.svelte';
@@ -10,7 +10,6 @@
 
 	const LS_KEY = 'pocketrugby_selected_teams';
 	const LS_COMPACT = 'pocketrugby_compact';
-	const LS_RECENT = 'pocketrugby_recent';
 
 	let allMatches = $state<Match[]>([]);
 	let selectedTeams = $state<string[]>([]);
@@ -18,11 +17,12 @@
 	let error = $state('');
 	let filterOpen = $state(false);
 	let stickyEl = $state<HTMLElement | null>(null);
+	let bottomBarEl = $state<HTMLElement | null>(null);
+	let vlist = $state<{ scrollToIndex: (i: number, offset?: number) => void } | null>(null);
 	let searchInput = $state('');
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let matchSearch = $state('');
 	let compact = $state(false);
-	let recentOnly = $state(false);
 
 	$effect(() => {
 		const val = searchInput;
@@ -32,8 +32,7 @@
 
 	const teams = $derived(allTeams(allMatches));
 	const clubGroups = $derived(groupByClub(teams));
-	const timeFiltered = $derived(recentOnly ? filterByTimeWindow(allMatches) : allMatches);
-	const filtered = $derived(filterMatches(timeFiltered, selectedTeams));
+	const filtered = $derived(filterMatches(allMatches, selectedTeams));
 	const searched = $derived(searchMatches(filtered, matchSearch));
 	const grouped = $derived(groupByDate(searched));
 
@@ -46,7 +45,7 @@
 		return flat;
 	});
 
-	// Slot heights must accommodate text wrapping on small screens
+	// Slot heights are estimates; VirtualList measures actual heights via ResizeObserver.
 	const getHeight = $derived(
 		(item: FlatItem): number => item.type === 'date' ? 52 : (compact ? 58 : 100)
 	);
@@ -81,9 +80,17 @@
 		localStorage.setItem(LS_COMPACT, String(compact));
 	}
 
-	function toggleRecent() {
-		recentOnly = !recentOnly;
-		localStorage.setItem(LS_RECENT, String(recentOnly));
+	function scrollToNow() {
+		const today = new Date().toISOString().slice(0, 10);
+		let targetIdx = 0;
+		for (let i = 0; i < flatItems.length; i++) {
+			const item = flatItems[i];
+			if (item.type === 'date') {
+				targetIdx = i;
+				if (item.date >= today) break;
+			}
+		}
+		vlist?.scrollToIndex(targetIdx, stickyEl?.offsetHeight ?? 0);
 	}
 
 	function onKeydown(e: KeyboardEvent) {
@@ -97,6 +104,7 @@
 
 	function onPointerdown(e: PointerEvent) {
 		if (filterOpen && stickyEl && !stickyEl.contains(e.target as Node)) {
+			if (bottomBarEl?.contains(e.target as Node)) return;
 			filterOpen = false;
 		}
 	}
@@ -107,7 +115,6 @@
 			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
 		}
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
-		recentOnly = localStorage.getItem(LS_RECENT) === 'true';
 		try {
 			const res = await fetch('/api/matches');
 			if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -127,7 +134,7 @@
 	<header>
 		<h1>🏉 PocketRugbyNL</h1>
 		<div class="header-actions desktop-only">
-			<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel (afgelopen, deze en volgende week)">Nu</button>
+			<button class="icon-btn" onclick={scrollToNow} title="Spring naar vandaag">Nu</button>
 			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
 				{compact ? '▤' : '☰'}
 			</button>
@@ -196,7 +203,7 @@
 	{:else if searched.length === 0}
 		<div class="empty">Geen wedstrijden gevonden voor deze zoekopdracht.</div>
 	{:else}
-		<VirtualList items={flatItems} {getHeight}>
+		<VirtualList items={flatItems} {getHeight} bind:this={vlist}>
 			{#snippet children(item)}
 				{#if item.type === 'date'}
 					<h2 class="date-heading">{formatDate(item.date)}</h2>
@@ -209,14 +216,14 @@
 </main>
 
 <!-- Mobile/tablet bottom control bar -->
-<div class="bottom-bar mobile-only">
+<div class="bottom-bar mobile-only" bind:this={bottomBarEl}>
 	<input
 		class="search-input"
 		type="search"
 		placeholder="Zoek wedstrijd, team, locatie…"
 		bind:value={searchInput}
 	/>
-	<button class="icon-btn" class:active={recentOnly} onclick={toggleRecent} title="Actueel">Nu</button>
+	<button class="icon-btn" onclick={scrollToNow} title="Spring naar vandaag">Nu</button>
 	<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
 		{compact ? '▤' : '☰'}
 	</button>
@@ -395,6 +402,16 @@
 
 	@media (max-width: 768px) {
 		.desktop-only { display: none !important; }
+
+		.filter-panel {
+			position: fixed;
+			bottom: 60px;
+			left: 0;
+			right: 0;
+			border-top: 2px solid var(--accent);
+			border-bottom: none;
+			z-index: 9;
+		}
 
 		.bottom-bar {
 			display: flex;
