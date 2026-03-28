@@ -6,14 +6,11 @@ import { runScrape } from '$lib/scrapeRunner';
 // Expose to non-SvelteKit server modules (cron runs outside SvelteKit request context)
 process.env['RUGBY_SCHEDULE_URL'] ||= RUGBY_SCHEDULE_URL;
 
-let cronStarted = false;
+// Runs immediately at server startup, not on first request
+startCron();
+console.log('[startup] Running initial scrape...');
+runScrape('cold-start').catch((err) => console.error('[startup] initial scrape failed:', err));
 
 export const handle: Handle = async ({ event, resolve }) => {
-	if (!cronStarted) {
-		cronStarted = true;
-		startCron();
-		console.log('[startup] Running initial scrape...');
-		runScrape('cold-start').catch((err) => console.error('[startup] initial scrape failed:', err));
-	}
 	return resolve(event);
 };
