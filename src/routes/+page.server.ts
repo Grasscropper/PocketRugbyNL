@@ -10,7 +10,7 @@ export const load: PageServerLoad = () => {
 
 	if (isStale && !isScraping) {
 		// Fire-and-forget: user gets cached data immediately, scrape runs in background
-		runScrape().catch((err) => console.error('[load] background scrape failed:', err));
+		runScrape('on-visit').catch((err) => console.error('[load] background scrape failed:', err));
 	}
 
 	// TODO: Handle null data case in the UI — occurs on first cold start before cron has run.

@@ -15,7 +15,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		startCron();
 		if (!readCache()) {
 			console.log('[startup] No cache found — running initial scrape...');
-			runScrape().catch((err) => console.error('[startup] initial scrape failed:', err));
+			runScrape('cold-start').catch((err) => console.error('[startup] initial scrape failed:', err));
 		}
 	}
 	return resolve(event);
