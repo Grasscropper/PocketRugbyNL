@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { page } from '$app/stores';
 	import { onMount } from 'svelte';
 	import { groupByDate, formatDate, searchMatches } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import { filterMatches } from '$lib/matchFilter';
 	import MatchCard from '$lib/components/MatchCard.svelte';
 	import type { Match, RankingEntry } from '$lib/types';
+	import type { PageData } from './$types';
 
 	const LS_COMPACT = 'pocketrugby_compact';
 
-	const id = $derived($page.params.id);
+	let { data }: { data: PageData } = $props();
 
-	let matches = $state<Match[]>([]);
-	let rankings = $state<RankingEntry[]>([]);
-	let name = $state('');
-	let loading = $state(true);
+	const matches = $derived<Match[]>(data.matches ?? []);
+	const rankings = $derived<RankingEntry[]>(data.rankings ?? []);
+	const name = $derived(data.name ?? '');
+	let loading = $state(false);
 	let error = $state('');
 
 	let searchInput = $state('');
@@ -83,20 +83,8 @@
 		}
 	}
 
-	onMount(async () => {
+	onMount(() => {
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
-		try {
-			const res = await fetch(`/api/competition/${id}`);
-			if (!res.ok) throw new Error(`HTTP ${res.status}`);
-			const data = await res.json();
-			matches = data.matches ?? [];
-			rankings = data.rankings ?? [];
-			name = data.name ?? '';
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-		} finally {
-			loading = false;
-		}
 	});
 
 </script>
@@ -172,8 +160,8 @@
 </div>
 
 <main>
-	{#if loading}
-		<div class="loading">Laden… (kan 5-15 seconden duren)</div>
+	{#if data.matches === null}
+		<div class="loading">Data wordt geladen, probeer het zo opnieuw.</div>
 	{:else if error}
 		<div class="error">Fout: {error}</div>
 	{:else}
