@@ -1,7 +1,12 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+import type { Match, RankingEntry } from '$lib/types';
+
+export type CompetitionDetail = { matches: Match[]; rankings: RankingEntry[]; name: string };
+export type CompetitionsMap = Record<string, CompetitionDetail>;
 
 const CACHE_FILE = join(process.cwd(), 'cache', 'data.json');
+const COMPETITIONS_FILE = join(process.cwd(), 'cache', 'competitions.json');
 
 interface CacheFile {
 	data: unknown;
@@ -21,6 +26,21 @@ export function writeCache(data: unknown): void {
 	const dir = join(process.cwd(), 'cache');
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	writeFileSync(CACHE_FILE, JSON.stringify({ data, cachedAt: Date.now() }), 'utf-8');
+}
+
+export function readCompetitionsCache(): CompetitionsMap | null {
+	try {
+		if (!existsSync(COMPETITIONS_FILE)) return null;
+		return JSON.parse(readFileSync(COMPETITIONS_FILE, 'utf-8')) as CompetitionsMap;
+	} catch {
+		return null;
+	}
+}
+
+export function writeCompetitionsCache(competitions: CompetitionsMap): void {
+	const dir = join(process.cwd(), 'cache');
+	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	writeFileSync(COMPETITIONS_FILE, JSON.stringify(competitions), 'utf-8');
 }
 
 const LOG_FILE = join(process.cwd(), 'cache', 'scrape.log');

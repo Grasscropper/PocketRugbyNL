@@ -1,4 +1,8 @@
-import { isScraping, setScrapingLock, writeCache, logScrapeStart, logScrapeEnd } from '$lib/cache';
+import {
+	isScraping, setScrapingLock,
+	writeCache, writeCompetitionsCache,
+	logScrapeStart, logScrapeEnd
+} from '$lib/cache';
 import type { ScrapeTrigger } from '$lib/cache';
 import { scrapeData } from '$lib/scraper';
 
@@ -10,9 +14,10 @@ export async function runScrape(trigger: ScrapeTrigger): Promise<void> {
 	const start = Date.now();
 	logScrapeStart(trigger);
 	try {
-		const data = await scrapeData();
-		writeCache(data);
-		logScrapeEnd(trigger, Date.now() - start, { matches: data.length });
+		const { matches, competitions } = await scrapeData();
+		writeCache(matches);
+		writeCompetitionsCache(competitions);
+		logScrapeEnd(trigger, Date.now() - start, { matches: matches.length });
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error('[scrapeRunner] scrape failed:', err);
