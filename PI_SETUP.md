@@ -20,7 +20,7 @@ npm install -g pm2
 ## Build and run
 
 ```bash
-git clone <your-repo-url> PocketRugbyNL
+git clone https://github.com/Grasscropper/PocketRugbyNL.git PocketRugbyNL
 cd PocketRugbyNL
 npm install
 npm run build
@@ -63,12 +63,25 @@ The app listens on port **3000** by default. Set `PORT=XXXX` in `.env` to change
 
 ## Expose with Cloudflare Tunnel
 
-Install `cloudflared`:
+Install `cloudflared`. First check your architecture:
 
 ```bash
-curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 \
+uname -m
+```
+
+Then download the matching binary:
+
+```bash
+# armv7l (32-bit, most Raspberry Pi models)
+sudo curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm \
   -o /usr/local/bin/cloudflared
-chmod +x /usr/local/bin/cloudflared
+
+# arm64 (64-bit OS only)
+sudo curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64 \
+  -o /usr/local/bin/cloudflared
+
+sudo chmod +x /usr/local/bin/cloudflared
+cloudflared --version
 ```
 
 Authenticate and create a tunnel (one-time):
