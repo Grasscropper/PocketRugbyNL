@@ -105,6 +105,13 @@ ingress:
   - service: http_status:404
 ```
 
+Register both hostnames as DNS routes for the tunnel:
+
+```bash
+cloudflared tunnel route dns pocketrugbynl yourapp.example.com
+cloudflared tunnel route dns pocketrugbynl deploy.yourapp.example.com
+```
+
 Run as a persistent systemd service:
 
 ```bash
