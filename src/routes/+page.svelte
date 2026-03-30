@@ -147,7 +147,7 @@
 
 <div class="sticky-top" bind:this={stickyEl}>
 	<header>
-		<h1>🏉 PocketRugbyNL</h1>
+		<h1><img src="/icon-192.png" alt="Rugby ball" class="title-icon" /> PocketRugbyNL</h1>
 		<div class="header-actions desktop-only">
 			<button class="icon-btn" onclick={scrollToNow} title="Spring naar vandaag">Nu</button>
 			<button class="icon-btn" onclick={toggleCompact} title={compact ? 'Uitgebreid' : 'Compact'}>
@@ -269,7 +269,8 @@
 		justify-content: space-between;
 	}
 
-	h1 { font-size: 1.25rem; font-weight: 700; }
+	h1 { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.4rem; }
+	.title-icon { width: 1.5rem; height: 1.5rem; object-fit: contain; }
 
 	.header-actions { display: flex; gap: 0.5rem; align-items: center; }
 
