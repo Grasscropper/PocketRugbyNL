@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { invalidateAll, replaceState } from '$app/navigation';
 	import { filterMatches, searchMatches, groupByDate, formatDate } from '$lib/matchFilter';
 	import { allTeams, groupByClub } from '$lib/teamUtils';
 	import MatchCard from '$lib/components/MatchCard.svelte';
@@ -28,11 +28,23 @@
 	let matchSearch = $state('');
 	let compact = $state(false);
 	let pollCountdown = $state(10);
+	let initialized = $state(false);
 
 	$effect(() => {
 		const val = searchInput;
 		const t = setTimeout(() => { matchSearch = val; }, 250);
 		return () => clearTimeout(t);
+	});
+
+	// Keep URL params and localStorage in sync with filter state
+	$effect(() => {
+		if (!initialized) return;
+		const params = new URLSearchParams();
+		if (selectedTeams.length > 0) params.set('teams', selectedTeams.join(','));
+		if (searchInput) params.set('q', searchInput);
+		const qs = params.toString();
+		replaceState(qs ? `?${qs}` : location.pathname, {});
+		localStorage.setItem(LS_KEY, JSON.stringify(selectedTeams));
 	});
 
 	const teams = $derived(allTeams(allMatches));
@@ -61,7 +73,6 @@
 		} else {
 			selectedTeams = [...selectedTeams, team];
 		}
-		localStorage.setItem(LS_KEY, JSON.stringify(selectedTeams));
 	}
 
 	function selectClub(clubTeams: string[]) {
@@ -72,12 +83,10 @@
 			const toAdd = clubTeams.filter((t) => !selectedTeams.includes(t));
 			selectedTeams = [...selectedTeams, ...toAdd];
 		}
-		localStorage.setItem(LS_KEY, JSON.stringify(selectedTeams));
 	}
 
 	function clearFilter() {
 		selectedTeams = [];
-		localStorage.setItem(LS_KEY, JSON.stringify([]));
 	}
 
 	function toggleCompact() {
@@ -115,11 +124,20 @@
 	}
 
 	onMount(() => {
-		const saved = localStorage.getItem(LS_KEY);
-		if (saved) {
-			try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
+		const params = new URLSearchParams(location.search);
+		const teamsParam = params.get('teams');
+		const qParam = params.get('q');
+
+		if (teamsParam) {
+			selectedTeams = teamsParam.split(',').filter(Boolean);
+		} else {
+			const saved = localStorage.getItem(LS_KEY);
+			if (saved) try { selectedTeams = JSON.parse(saved); } catch { /* ignore */ }
 		}
+
+		if (qParam) searchInput = qParam;
 		compact = localStorage.getItem(LS_COMPACT) === 'true';
+		initialized = true;
 
 		// Poll for new scrape data every 10s and reload when cachedAt changes
 		const tick = setInterval(() => {
