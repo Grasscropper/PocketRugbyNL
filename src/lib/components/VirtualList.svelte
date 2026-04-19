@@ -1,4 +1,5 @@
 <script lang="ts" generics="T">
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -23,9 +24,11 @@
 
 	// Pending measurements are batched via queueMicrotask to avoid one Map copy per item.
 	let pendingMeasures: Map<number, number> | null = null;
+	let destroyed = false;
+	onDestroy(() => { destroyed = true; });
 
 	function flushMeasures() {
-		if (!pendingMeasures) return;
+		if (!pendingMeasures || destroyed) return;
 		measuredHeights = new Map([...measuredHeights, ...pendingMeasures]);
 		pendingMeasures = null;
 	}
