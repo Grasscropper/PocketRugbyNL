@@ -39,8 +39,11 @@ createServer((req, res) => {
     console.log('[webhook] Deploy triggered');
 
     execFile(DEPLOY_SCRIPT, (err, stdout, stderr) => {
-      if (err) console.error('[webhook] Deploy failed:', stderr);
-      else console.log('[webhook] Deploy done:', stdout.trim());
+      if (err) {
+        console.error('[webhook] Deploy failed (exit %d):\nstdout: %s\nstderr: %s', err.code, stdout.trim(), stderr.trim());
+      } else {
+        console.log('[webhook] Deploy done:', stdout.trim());
+      }
     });
   });
 }).listen(PORT, () => console.log(`[webhook] Listening on :${PORT}`));
